@@ -2,10 +2,10 @@ import 'dart:math';
 import '../models/disc.dart';
 
 class FlightPoint {
-  final double x; // distance in meters (forward from thrower)
-  final double y; // lateral position (right positive, left negative) - for visualization
-  final double height; // actual height in meters
-  final double speed; // current speed percentage (0-1)
+  final double x; // forward distance
+  final double y; // lateral deviation
+  final double height;
+  final double speed;
 
   FlightPoint({
     required this.x,
@@ -29,13 +29,6 @@ class FlightResult {
   });
 }
 
-/// Realistic Disc Golf Flight Simulator
-/// 
-/// Physics model based on flight numbers:
-/// - Speed: Affects initial velocity and max distance potential
-/// - Glide: Affects how long disc stays aloft (lift coefficient)
-/// - Turn: Affects lateral drift at high speeds (negative = right turn for RHBH)
-/// - Fade: Affects lateral drift at low speeds (positive = left fade for RHBH)
 class FlightSimulator {
   static FlightResult calculateFlight({
     required Disc disc,
@@ -45,101 +38,146 @@ class FlightSimulator {
   }) {
     final List<FlightPoint> path = [];
     
-    // Normalize flight numbers
-    final speedFactor = disc.speed / 14.0;
-    final glideFactor = disc.glide / 7.0;
-    final turnFactor = disc.turn / -5.0; // Normalize negative turn
-    final fadeFactor = disc.fade / 5.0;
+    // Validate inputs
+    power = power.clamp(0.3, 1.0);
+    windSpeed = windSpeed.clamp(0.0, 50.0);
     
-    // Physical constants
-    const airDensity = 1.225;
-    const discMass = 0.175;
-    const discArea = 0.038;
+    // Flight characteristics
+    final speed = disc.speed.toDouble();
+    final glide = disc.glide.toDouble();
+    final turn = disc.turn.toDouble();
+    final fade = disc.fade.toDouble();
+    
+    // Physics constants
     const gravity = 9.81;
-    const timeStep = 0.02; // Smaller timestep = more points = smoother curve
+    const airDensity = 1.225;
+    const timeStep = 0.05;
+    const maxTime = 10.0; // Max 10 seconds flight time
     
-    // Initial velocity based on power and disc speed
-    final initialSpeed = (15.0 + disc.speed * 1.5) * power;
-    final initialHeight = 1.5;
+    // Initial conditions - based on disc speed and throw power
+    // Higher speed discs = higher initial velocity
+    final initialVelocity = 15.0 + (speed * 2.0) * power;
     
-    // Wind in m/s
+    // Throw angle - based on power (higher power = lower angle for distance)
+    final throwAngle = 8.0 + (1.0 - power) * 5.0; // 8-13 degrees
+    final throwAngleRad = throwAngle * pi / 180;
+    
+    // Wind components
     final windRad = windDirection * pi / 180;
     final windSpeedMs = windSpeed / 3.6;
-    final windX = cos(windRad) * windSpeedMs;
-    final windZ = sin(windRad) * windSpeedMs;
+    final headwind = cos(windRad) * windSpeedMs;
+    final crosswind = sin(windRad) * windSpeedMs;
     
-    // State variables
-    double x = 0, y = initialHeight, z = 0;
-    double vx = initialSpeed, vy = initialSpeed * 0.2 * glideFactor, vz = 0;
-    double maxH = initialHeight;
+    // Initial state
+    double x = 0; // forward
+    double y = 1.5; // lateral
+    double h = 1.2; // height (throw height)
     
-    bool groundHit = false;
-    int iterations = 0;
+    double vx = initialVelocity * cos(throwAngleRad);
+    double vy = 0; // initially straight
+    double vh = initialVelocity * sin(throwAngleRad);
     
-    while (!groundHit && iterations < 3000) {
-      iterations++;
+    double maxH = h;
+    double totalTime = 0;
+    
+    // Flight simulation
+    while (totalTime < maxTime && h >= 0) {
+      totalTime += timeStep;
       
-      // Current speed and speed ratio
-      final vTotal = sqrt(vx*vx + vy*vy + vz*vz);
-      final speedRatio = vTotal / initialSpeed;
+      // Current forward speed relative to air
+      final vForward = vx - headwind;
+      final vTotal = sqrt(vForward * vForward + vh * vh + vy * vy);
       
-      // Relative velocity to air
-      final vRelX = vx - windX;
-      final vRelZ = vz - windZ;
-      final vRelTotal = sqrt(vRelX*vRelX + vy*vy + vRelZ*vRelZ);
+      // Prevent division by zero
+      if (vTotal < 0.1) break;
       
-      // Dynamic pressure
-      final dynamicPressure = 0.5 * airDensity * vRelTotal * vRelTotal;
+      // Speed ratio (how much speed left vs initial)
+      final speedRatio = (vTotal / initialVelocity).clamp(0.0, 1.0);
       
-      // Aerodynamic coefficients
-      final dragCoeff = 0.4 + (1.0 - speedRatio) * 0.3;
-      final liftCoeff = glideFactor * (0.5 + 0.5 * cos((1.0 - speedRatio) * pi * 0.5));
+      // Drag force reduces forward velocity
+      // Higher speed = more drag
+      final dragCoeff = 0.5 + (1.0 - speedRatio) * 0.2;
+      final dragForce = 0.5 * airDensity * vTotal * vTotal * 0.015 * dragCoeff;
+      final dragAccel = dragForce / 0.175; // disc mass ~175g
       
-      // Turn is active at high speed (first 60% of speed)
-      final turnEffect = speedRatio > 0.4 ? turnFactor * (speedRatio - 0.4) / 0.6 : 0;
+      vx -= dragAccel * timeStep * (vx / vTotal);
       
-      // Fade is active at low speed (below 50% speed)
-      final fadeEffect = speedRatio < 0.5 ? fadeFactor * (0.5 - speedRatio) / 0.5 : 0;
+      // Lift keeps disc in air - based on glide
+      // Higher glide = more lift at lower speeds
+      final liftCoeff = glide / 7.0 * (0.3 + speedRatio * 0.7);
+      final liftForce = 0.5 * airDensity * vTotal * vTotal * 0.015 * liftCoeff;
+      final liftAccel = liftForce / 0.175;
       
-      // Forces
-      final forceDrag = dynamicPressure * discArea * dragCoeff;
-      final forceLift = dynamicPressure * discArea * liftCoeff;
-      final lateralForce = (turnEffect - fadeEffect) * forceLift * 0.3;
+      // Gravity
+      vh -= gravity * timeStep;
+      vh += liftAccel * timeStep * 0.3; // Lift counteracts gravity
       
-      // Accelerations
-      final ax = -(forceDrag / discMass) * (vx / vTotal);
-      final ay = (forceLift / discMass) - gravity;
-      final az = lateralForce / discMass;
+      // Lateral movement (Turn and Fade)
+      // Turn: happens at high speed, moves disc right (for RHBH with negative turn)
+      // Fade: happens at low speed, moves disc left
       
-      // Update
-      vx += ax * timeStep;
-      vy += ay * timeStep;
-      vz += az * timeStep;
+      double lateralForce = 0;
       
-      x += vx * timeStep;
-      y += vy * timeStep;
-      z += vz * timeStep;
-      
-      if (y > maxH) maxH = y;
-      if (y <= 0) {
-        groundHit = true;
-        y = 0;
+      // Turn phase (first ~50% of flight, when speedRatio > 0.5)
+      if (speedRatio > 0.4) {
+        // Turn effect: negative turn = understable = moves right
+        final turnEffect = turn < 0 ? turn * 2.0 : 0;
+        lateralForce += turnEffect * vTotal * 0.1;
       }
       
-      // Record every iteration for maximum smoothness
-      path.add(FlightPoint(
-        x: x,
-        y: z, // lateral deviation
-        height: y,
-        speed: speedRatio,
-      ));
+      // Fade phase (last ~40% of flight, when speedRatio < 0.5)
+      if (speedRatio < 0.5) {
+        // Fade effect: positive fade = overstable = moves left
+        final fadeEffect = fade > 0 ? -fade * 2.5 : 0;
+        lateralForce += fadeEffect * vTotal * 0.1;
+      }
+      
+      // Wind effect on lateral
+      lateralForce += crosswind * 0.5;
+      
+      vy += lateralForce * timeStep;
+      
+      // Update positions
+      x += vx * timeStep;
+      y += vy * timeStep;
+      h += vh * timeStep;
+      
+      // Track max height
+      if (h > maxH) maxH = h;
+      
+      // Record point
+      if (totalTime % 0.1 < timeStep) {
+        path.add(FlightPoint(
+          x: x,
+          y: y,
+          height: h,
+          speed: speedRatio,
+        ));
+      }
+      
+      // Ground hit
+      if (h <= 0) {
+        h = 0;
+        path.add(FlightPoint(
+          x: x,
+          y: y,
+          height: 0,
+          speed: speedRatio,
+        ));
+        break;
+      }
+    }
+    
+    // Ensure we have at least one point
+    if (path.isEmpty) {
+      path.add(FlightPoint(x: 0, y: 0, height: 0, speed: 0));
     }
     
     return FlightResult(
       path: path,
-      totalDistance: x,
-      maxHeight: maxH,
-      finalLateral: z,
+      totalDistance: x.isFinite ? x : 0,
+      maxHeight: maxH.isFinite ? maxH : 0,
+      finalLateral: y.isFinite ? y : 0,
     );
   }
 }
