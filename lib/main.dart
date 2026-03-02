@@ -36,17 +36,16 @@ class DiscListScreen extends StatelessWidget {
         itemCount: allDiscs.length,
         itemBuilder: (context, index) {
           final disc = allDiscs[index];
-          return Card(
-            child: ListTile(
-              leading: const Icon(Icons.disc_full),
-              title: Text(disc.name),
-              subtitle: Text(disc.brand),
-              trailing: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getDiscColor(disc.speed),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          return ListTile(
+            leading: const Icon(Icons.disc_full),
+            title: Text(disc.name),
+            subtitle: Text(disc.brand),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _getDiscColor(disc.speed),
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Text(
                 disc.flightNumbers,
                 style: const TextStyle(
@@ -54,20 +53,20 @@ class DiscListScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              onTap: () {
-                Navigator.push(
+            ),
+            onTap: () {
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => FlightSimulatorScreen(disc: disc),
                 ),
               );
             },
-          ),
-        );
-      },
-    ),
-  );
-}
+          );
+        },
+      ),
+    );
+  }
 
   Color _getDiscColor(int speed) {
     if (speed >= 10) return Colors.red;
