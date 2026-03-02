@@ -43,7 +43,7 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: ListView.builder(
+      body: ListView.builder( // Fixed
         itemCount: discs.length,
         itemBuilder: (context, index) {
           final disc = discs[index];
