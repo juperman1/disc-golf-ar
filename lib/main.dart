@@ -47,27 +47,27 @@ class DiscListScreen extends StatelessWidget {
                   color: _getDiscColor(disc.speed),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  disc.flightNumbers,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+              child: Text(
+                disc.flightNumbers,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
+              ),
               onTap: () {
                 Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => FlightSimulatorScreen(disc: disc),
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FlightSimulatorScreen(disc: disc),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    ),
+  );
+}
 
   Color _getDiscColor(int speed) {
     if (speed >= 10) return Colors.red;
