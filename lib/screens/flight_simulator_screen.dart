@@ -22,11 +22,11 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
       case 'front':
         return 0; // headwind
       case 'right':
-        return 90; // from right (blows to left)
+        return 90; // from right
       case 'back':
         return 180; // tailwind
       case 'left':
-        return 270; // from left (blows to right)
+        return 270; // from left
       default:
         return 0;
     }
@@ -104,22 +104,31 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
             ),
           ),
           
-          // Stats
+          // Stats with explanations
           if (flightResult != null)
             Padding(
               padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              child: Column(
                 children: [
-                  _buildStat('Distance', '${flightResult!.totalDistance.toStringAsFixed(1)}m'),
-                  _buildStat('Max Height', '${flightResult!.maxHeight.toStringAsFixed(1)}m'),
-                  _buildStat('Lateral', '${flightResult!.finalLateral.toStringAsFixed(1)}m'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildStat('Distance', '${flightResult!.totalDistance.toStringAsFixed(1)}m', 'How far the disc flies'),
+                      _buildStat('Max Height', '${flightResult!.maxHeight.toStringAsFixed(1)}m', 'Highest point in flight'),
+                      _buildStat('Lateral', '${flightResult!.finalLateral.abs().toStringAsFixed(1)}m ${_getLateralDirection()}', 'Left/right from target'),
+                    ],
+                  ),
                 ],
               ),
             ),
         ],
       ),
     );
+  }
+
+  String _getLateralDirection() {
+    if (flightResult == null) return '';
+    return flightResult!.finalLateral > 0 ? '→' : '←';
   }
 
   String _getDiscDescription() {
@@ -192,12 +201,15 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
     );
   }
 
-  Widget _buildStat(String label, String value) {
-    return Column(
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-      ],
+  Widget _buildStat(String label, String value, String description) {
+    return Tooltip(
+      message: description,
+      child: Column(
+        children: [
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }
@@ -239,130 +251,210 @@ class _FlightPathPainter extends CustomPainter {
     final path = flightResult.path;
     if (path.isEmpty) return;
 
-    // Draw field/grid
-    _drawField(canvas, size);
-
-    // Calculate scales
-    // X (forward) maps to Y-axis on screen (bottom to top)
-    // Z (lateral) maps to X-axis on screen (centered)
-    final maxX = flightResult.totalDistance * 1.1;
-    final maxZ = 30.0; // meters left/right
+    // Fixed scale: always show up to 150m
+    const maxDistance = 150.0;
+    const maxLateral = 40.0; // 40m left/right
     
-    final scaleY = size.height / maxX;
-    final scaleX = size.width / (maxZ * 2);
-    final centerX = size.width / 2;
+    // Calculate scales
+    final availableHeight = size.height - 60; // Leave space for labels
+    final availableWidth = size.width - 50; // Leave space for scale
+    final scaleY = availableHeight / maxDistance;
+    final scaleX = availableWidth / (maxLateral * 2);
+    final centerX = (size.width - 50) / 2 + 40; // Offset for left scale
+    final bottomY = size.height - 30;
 
-    // Draw flight path
+    // Draw field
+    _drawField(canvas, size, centerX, bottomY, scaleY, maxDistance);
+
+    // Draw smooth flight path using curves
     final pathPaint = Paint()
       ..color = _getPathColor()
-      ..strokeWidth = 4
+      ..strokeWidth = 5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final flightPath = Path();
-    bool first = true;
-    
-    for (final point in path) {
-      final screenX = centerX + point.z * scaleX;
-      final screenY = size.height - (point.x * scaleY) - 20; // Offset from bottom
+    if (path.length >= 2) {
+      final flightPath = Path();
       
-      if (first) {
-        flightPath.moveTo(screenX, screenY);
-        first = false;
-      } else {
-        flightPath.lineTo(screenX, screenY);
+      // Start from thrower
+      final startZ = path.first.z;
+      final startScreenX = centerX + startZ * scaleX;
+      final startScreenY = bottomY - (path.first.x * scaleY);
+      flightPath.moveTo(startScreenX, startScreenY);
+      
+      // Draw smooth curve through points
+      for (int i = 1; i < path.length - 1; i++) {
+        final p0 = path[i];
+        final p1 = path[i + 1];
+        
+        final x = centerX + p0.z * scaleX;
+        final y = bottomY - (p0.x * scaleY);
+        
+        final nextX = centerX + p1.z * scaleX;
+        final nextY = bottomY - (p1.x * scaleY);
+        
+        // Use quadratic bezier for smooth curves
+        final midX = (x + nextX) / 2;
+        final midY = (y + nextY) / 2;
+        
+        flightPath.quadraticBezierTo(x, y, midX, midY);
       }
+      
+      // Draw to final point
+      final last = path.last;
+      final lastX = centerX + last.z * scaleX;
+      final lastY = bottomY - (last.x * scaleY);
+      flightPath.lineTo(lastX, lastY);
+      
+      // Draw shadow/glow for flight path
+      final shadowPaint = Paint()
+        ..color = _getPathColor().withOpacity(0.3)
+        ..strokeWidth = 12
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      canvas.drawPath(flightPath, shadowPaint);
+      
+      // Draw main flight path
+      canvas.drawPath(flightPath, pathPaint);
+      
+      // Draw landing disc
+      _drawDisc(canvas, lastX, lastY);
     }
     
-    canvas.drawPath(flightPath, pathPaint);
-
-    // Draw start position (thrower)
-    final startPaint = Paint()
-      ..color = Colors.black
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(centerX, size.height - 20),
-      6,
-      startPaint,
-    );
-    
-    // Draw end position (landing)
-    final endPoint = path.last;
-    final endX = centerX + endPoint.z * scaleX;
-    final endY = size.height - (endPoint.x * scaleY) - 20;
-    
-    final endPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(endX, endY),
-      8,
-      endPaint,
-    );
-    
-    // Draw disc icon at landing
-    final discPaint = Paint()
-      ..color = Colors.red.shade700
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawCircle(Offset(endX, endY), 12, discPaint);
+    // Draw thrower at bottom
+    _drawThrower(canvas, centerX, bottomY);
   }
 
-  void _drawField(Canvas canvas, Size size) {
-    // Background
+  void _drawField(Canvas canvas, Size size, double centerX, double bottomY, double scaleY, double maxDistance) {
+    // Draw grass background
     final bgPaint = Paint()
       ..color = Colors.green.shade100
       ..style = PaintingStyle.fill;
-    canvas.drawRect(Offset.zero & size, bgPaint);
+    canvas.drawRect(Offset(0, 0) & Size(size.width - 50, size.height), bgPaint);
     
-    // Center line (throw direction)
+    // Draw center throwing line
     final linePaint = Paint()
-      ..color = Colors.green.shade300
-      ..strokeWidth = 1
+      ..color = Colors.green.shade400
+      ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     
-    final centerX = size.width / 2;
     canvas.drawLine(
-      Offset(centerX, 0),
-      Offset(centerX, size.height),
+      Offset(centerX, bottomY),
+      Offset(centerX, 20),
       linePaint,
     );
     
-    // Distance markers (every 25m)
-    final maxDistance = flightResult.totalDistance * 1.2;
-    final scaleY = size.height / (maxDistance * 1.1);
-    
+    // Draw distance scale on the LEFT side
     final textStyle = TextStyle(
-      color: Colors.green.shade700,
-      fontSize: 10,
+      color: Colors.green.shade800,
+      fontSize: 11,
+      fontWeight: FontWeight.bold,
     );
     
-    for (int d = 25; d <= maxDistance; d += 25) {
-      final y = size.height - (d * scaleY) - 20;
-      if (y < 0) break;
+    // Distance markers every 25m
+    for (int d = 0; d <= maxDistance; d += 25) {
+      final y = bottomY - (d * scaleY);
+      if (y < 20) break;
       
+      // Horizontal tick line
       canvas.drawLine(
-        Offset(centerX - 5, y),
-        Offset(centerX + 5, y),
+        Offset(centerX - 10, y),
+        Offset(centerX + 10, y),
         linePaint,
       );
       
+      // Label on the left
       final textSpan = TextSpan(text: '${d}m', style: textStyle);
       final textPainter = TextPainter(
         text: textSpan,
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      textPainter.paint(canvas, Offset(centerX + 8, y - textPainter.height / 2));
+      textPainter.paint(canvas, Offset(5, y - textPainter.height / 2));
     }
+    
+    // Draw lateral scale at bottom (left/right indicators)
+    final lateralPaint = Paint()
+      ..color = Colors.green.shade600
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    
+    // Draw left/right markers
+    for (int l = -30; l <= 30; l += 15) {
+      if (l == 0) continue;
+      final x = centerX + l * ((size.width - 90) / 80);
+      
+      canvas.drawLine(
+        Offset(x, bottomY - 5),
+        Offset(x, bottomY + 5),
+        lateralPaint,
+      );
+      
+      final textSpan = TextSpan(
+        text: '${l > 0 ? '+' : ''}$l',
+        style: TextStyle(color: Colors.green.shade700, fontSize: 9),
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(x - textPainter.width / 2, bottomY + 8));
+    }
+  }
+
+  void _drawThrower(Canvas canvas, double x, double y) {
+    // Draw person icon (triangle for player)
+    final personPaint = Paint()
+      ..color = Colors.blue.shade700
+      ..style = PaintingStyle.fill;
+    
+    final path = Path();
+    path.moveTo(x, y - 15);
+    path.lineTo(x - 10, y + 5);
+    path.lineTo(x + 10, y + 5);
+    path.close();
+    
+    canvas.drawPath(path, personPaint);
+    
+    // Draw circle head
+    canvas.drawCircle(Offset(x, y - 20), 6, personPaint);
+  }
+
+  void _drawDisc(Canvas canvas, double x, double y) {
+    // Draw disc with shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.3)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(x + 3, y + 3), 10, shadowPaint);
+    
+    // Draw disc body
+    final discPaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(x, y), 10, discPaint);
+    
+    // Draw disc rim
+    final rimPaint = Paint()
+      ..color = Colors.red.shade800
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(Offset(x, y), 10, rimPaint);
+    
+    // Draw "X" for disc
+    final crossPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(x - 4, y - 4), Offset(x + 4, y + 4), crossPaint);
+    canvas.drawLine(Offset(x + 4, y - 4), Offset(x - 4, y + 4), crossPaint);
   }
 
   Color _getPathColor() {
     // Color based on flight characteristics
-    if (disc.speed >= 12) return Colors.red; // Distance driver
-    if (disc.speed >= 9) return Colors.orange; // Fairway
-    if (disc.speed >= 6) return Colors.blue; // Midrange
-    return Colors.purple; // Putter
+    if (disc.speed >= 12) return Colors.red.shade600; // Distance driver
+    if (disc.speed >= 9) return Colors.orange.shade700; // Fairway
+    if (disc.speed >= 6) return Colors.blue.shade600; // Midrange
+    return Colors.purple.shade600; // Putter
   }
 
   @override
