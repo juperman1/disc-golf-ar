@@ -2,10 +2,10 @@ import 'dart:math';
 import '../models/disc.dart';
 
 class FlightPoint {
-  final double x; // forward distance in meters
-  final double y; // lateral deviation in meters
-  final double height; // height in meters
-  final double speed; // current airspeed percentage (0-1)
+  final double x; // forward distance
+  final double y; // lateral deviation
+  final double height;
+  final double speed;
 
   FlightPoint({
     required this.x,
@@ -29,18 +29,8 @@ class FlightResult {
   });
 }
 
-/// Realistic Disc Flight Simulation based on PDGA physics
-/// 
-/// Flight Numbers Guide (for RHBH - Right Hand Back Hand):
-/// - Speed: 1-14, higher = requires more arm speed, flies farther
-/// - Glide: 1-7, higher = stays in air longer  
-/// - Turn: 0 to -5, more negative = more understable, turns RIGHT during high speed
-/// - Fade: 0-5, higher = more overstable, fades LEFT at end of flight
-///
-/// Typical Distances (RHBH, flat throw, no wind):
-/// - Speed 12: 100-130m (Destroyer type)
-/// - Speed 5: 60-80m (Buzzz type)
-/// - Speed 2: 30-50m (Putter)
+/// Disc Flight Physics Simulation
+/// Based on aerodynamics of spinning discs
 class FlightSimulator {
   static FlightResult calculateFlight({
     required Disc disc,
@@ -50,120 +40,135 @@ class FlightSimulator {
   }) {
     final List<FlightPoint> path = [];
     
-    // Validate inputs
+    // Sanitize inputs
     power = power.clamp(0.3, 1.0);
-    windSpeed = windSpeed.clamp(0.0, 40.0);
+    windSpeed = windSpeed.clamp(-50.0, 50.0);
     
     // Flight numbers
-    final speed = disc.speed.toDouble();
-    final glide = disc.glide.toDouble();
-    final turn = disc.turn.toDouble();
-    final fade = disc.fade.toDouble();
+    final speedRating = disc.speed.toDouble();
+    final glideRating = disc.glide.toDouble();
+    final turnRating = disc.turn.toDouble(); // Usually 0 to -5
+    final fadeRating = disc.fade.toDouble(); // Usually 0 to 5
     
-    // Base distances based on disc speed and power
-    // These are realistic max distances for RHBH
-    final baseDistances = {
-      1: 30.0, 2: 40.0, 3: 50.0, 4: 60.0, 5: 70.0,
-      6: 80.0, 7: 90.0, 8: 95.0, 9: 105.0, 10: 115.0,
-      11: 120.0, 12: 130.0, 13: 140.0, 14: 150.0,
-    };
+    // PHYSICS CONSTANTS
+    const gravity = 9.81;
+    const airDensity = 1.225; // kg/m³
+    const discMass = 0.175; // kg (typical 175g disc)
+    const discArea = 0.055; // m² (approx disc area)
+    const timeStep = 0.015; // seconds - smaller = more accurate
     
-    // Get base distance for this disc's speed
-    final baseDist = baseDistances[speed.toInt().clamp(1, 14)] ?? 80.0;
+    // THROW PARAMETERS
+    // Initial velocity based on disc speed rating and throw power
+    // Speed rating 12 needs ~25 m/s, Speed 5 needs ~18 m/s
+    final baseVelocity = 15.0 + (speedRating * 0.9);
+    final throwVelocity = baseVelocity * power; // 18-25 m/s
     
-    // Calculate max distance with power and glide
-    // Glide adds distance (up to 20% at max glide)
-    final glideBonus = glide / 7.0 * 0.25;
-    final maxDistance = baseDist * power * (1.0 + glideBonus);
+    // Release angle - hyzer or anhyzer based on turn/fade balance
+    // For a flat throw, slight hyzer for overstable, slight anhyzer for understable
+    final releaseAngle = (turnRating + fadeRating) * 1.5; // degrees
+    final releaseAngleRad = releaseAngle * pi / 180;
     
-    // Flight characteristics
-    const timeStep = 0.02; // seconds
-    const grav = 9.81;
-    
-    // Wind components in m/s
+    // WIND
     final windRad = windDirection * pi / 180;
-    final windMs = windSpeed / 3.6;
-    final headwind = -cos(windRad) * windMs; // Positive = headwind
-    final crosswind = sin(windRad) * windMs; // Positive = from right
+    final windV = windSpeed / 3.6; // m/s
+    final windX = -cos(windRad) * windV; // headwind (+) / tailwind (-)
+    final windY = sin(windRad) * windV; // crosswind
     
-    // Initial conditions
+    // Initial state
     double x = 0; // forward
-    double y = 0; // lateral  
-    double h = 1.3; // height (throw height)
+    double y = 0; // lateral
+    double h = 1.3; // height
     
-    // Velocity components
-    // Initial forward velocity based on power and disc speed
-    double vx = (15.0 + speed * 1.5) * power; // 15-36 m/s
-    double vy = 0; // initially straight forward
-    double vh = 5.0 + glide * 0.5; // initial upward (6-8.5 m/s based on glide)
+    // Initial velocities
+    double vx = throwVelocity * cos(releaseAngleRad);
+    double vy = throwVelocity * sin(releaseAngleRad);
+    double vh = throwVelocity * 0.15; // slight upward component
     
     double maxH = h;
-    double totalTime = 0;
-    const maxTime = 8.0; // max 8 seconds flight
+    double time = 0;
+    const maxTime = 6.0; // max 6 seconds
     
-    while (totalTime < maxTime && h >= 0) {
-      totalTime += timeStep;
+    // Simulation loop
+    while (time < maxTime && h >= 0 && vx > 1.0) {
+      time += timeStep;
       
-      // Current speed relative to ground
-      final vGround = sqrt(vx * vx + vh * vh);
+      // Current airspeed (relative to wind)
+      final vAirX = vx - windX;
+      final vAirY = vy - windY;
+      final vAirTotal = sqrt(vAirX * vAirX + vAirY * vAirY + vh * vh);
+      final vGround = sqrt(vx * vx + vy * vy + vh * vh);
       
-      // Speed relative to air (accounting for wind)
-      final vxAir = vx - headwind;
-      final vAir = sqrt(vxAir * vxAir + vh * vh + vy * vy);
+      if (vAirTotal < 0.1) break;
       
-      // Prevent division by zero
-      if (vAir < 0.1 || vx < 0.1) break;
+      // Speed ratio - how much speed remains
+      final speedRatio = (vAirTotal / throwVelocity).clamp(0.0, 1.0);
       
-      // Speed ratio (0.0 to 1.0)
-      final initialV = (15.0 + speed * 1.5);
-      final speedRatio = (vAir / initialV).clamp(0.0, 1.0);
+      // LIFT
+      // Discs generate lift from spin and forward motion
+      // Higher glide = better lift at lower speeds
+      // Lift coefficient peaks around mid-flight
+      final liftCoeff = (glideRating / 7.0) * 0.35 * (1.0 - speedRatio * 0.3);
+      final liftForce = 0.5 * airDensity * vAirTotal * vAirTotal * discArea * liftCoeff;
       
-      // Drag slows down forward motion
-      // Higher speed = more drag
-      final dragFactor = 0.3 + speed * 0.02; // speed 12 has more drag
-      vx -= dragFactor * 0.5 * speedRatio * timeStep;
+      // DRAG
+      // Discs have surprisingly low drag (better than spheres due to shape)
+      // Drag coefficient increases at very low speeds
+      final dragCoeff = 0.08 + (1.0 - speedRatio) * 0.1;
+      final dragForce = 0.5 * airDensity * vAirTotal * vAirTotal * discArea * dragCoeff;
       
-      // Lift keeps disc in air
-      // Glide determines how long disc stays up
-      // As speed drops, lift decreases
-      final liftFactor = (glide / 7.0) * 0.8 * speedRatio;
-      vh -= grav * timeStep;
-      vh += liftFactor * timeStep * 2.0;
+      // Apply forces
+      // Drag opposes motion
+      final dragAccel = dragForce / discMass;
+      vx -= dragAccel * timeStep * (vx / vGround);
       
-      // **TURN** - happens at HIGH speed (first 40% of flight)
-      // For RHBH: negative turn = understable = moves RIGHT (positive y)
-      // Effect is strongest at high speed, fades as speed drops
-      final turnEffect = turn < 0 && speedRatio > 0.5
-          ? -turn * 3.0 * ((speedRatio - 0.5) / 0.5) * vx * timeStep * 0.15
-          : 0.0;
-          
-      // **FADE** - happens at LOW speed (last 40% of flight)
-      // For RHBH: positive fade = overstable = moves LEFT (negative y)
-      // Effect increases as speed drops
-      final fadeEffect = fade > 0 && speedRatio < 0.5
-          ? -fade * 2.5 * ((0.5 - speedRatio) / 0.5) * vx * timeStep * 0.15
-          : 0.0;
+      // Gravity and lift
+      vh -= gravity * timeStep;
+      vh += (liftForce / discMass) * timeStep * 0.4;
       
-      // Wind effect on lateral
-      // Crosswind from right pushes disc left, from left pushes right
-      final windEffect = crosswind * timeStep * 0.3;
+      // **TURN PHYSICS**
+      // Turn happens when disc is understable (negative turn rating)
+      // It's caused by aerodynamic torque on the spinning disc
+      // Occurs at HIGH speed because understable discs want to turn over
       
-      // Update lateral velocity
-      vy += turnEffect + fadeEffect + windEffect;
+      // Turn effectiveness - strongest at 60-80% of max speed
+      final turnEffectiveness = turnRating < 0 
+          ? exp(-pow(speedRatio - 0.7, 2) / 0.1) * (-turnRating / 5.0) 
+          : 0;
       
-      // Apply some damping to lateral drift
-      vy *= 0.98;
+      // Turn direction - understable discs turn RIGHT for RHBH
+      // This is because the trailing edge lifts, creating rightward force
+      final turnForce = turnEffectiveness * speedRatio * 15.0;
+      vy += turnForce * timeStep;
+      
+      // **FADE PHYSICS**
+      // Fade happens when disc loses speed and becomes overstable
+      // Occurs at LOW speed (last 30% of flight)
+      // Overstable discs fade LEFT for RHBH
+      
+      // Fade effectiveness increases as speed drops
+      final fadeEffectiveness = fadeRating > 0 > 0
+          ? (1.0 - speedRatio).clamp(0.0, 1.0) * (fadeRating / 5.0)
+          : 0;
+      
+      // Fade direction - LEFT for RHBH
+      final fadeForce = fadeEffectiveness * 20.0;
+      vy -= fadeForce * timeStep;
+      
+      // Wind lateral effect
+      vy += windY * timeStep * 0.5;
+      
+      // Damping on lateral to prevent unrealistic drift
+      vy *= (1.0 - timeStep * 0.1);
       
       // Update positions
       x += vx * timeStep;
       y += vy * timeStep;
       h += vh * timeStep;
       
-      // Track max height
       if (h > maxH) maxH = h;
       
-      // Record point every 0.1 seconds for smooth curve
-      if ((totalTime * 100).toInt() % 5 == 0) {
+      // Record point
+      if ((time * 100).toInt() % 4 == 0) {
         path.add(FlightPoint(
           x: x,
           y: y,
@@ -185,23 +190,25 @@ class FlightSimulator {
       }
     }
     
-    // Ensure we have at least start and end
+    // Ensure minimum path
     if (path.isEmpty) {
       path.add(FlightPoint(x: 0, y: 0, height: 1.3, speed: 1.0));
-      path.add(FlightPoint(x: maxDistance, y: 0, height: 0, speed: 0));
+    }
+    if (path.length < 2 || h > 0) {
+      path.add(FlightPoint(
+        x: x,
+        y: y,
+        height: h.clamp(0.0, 50.0),
+        speed: 0,
+      ));
     }
     
+    final last = path.last;
     return FlightResult(
       path: path,
-      totalDistance: path.last.x.isFinite && path.last.x > 0 
-          ? path.last.x 
-          : maxDistance,
-      maxHeight: maxH.isFinite && maxH > 0 
-          ? maxH 
-          : 8.0,
-      finalLateral: path.last.y.isFinite 
-          ? path.last.y 
-          : 0.0,
+      totalDistance: last.x.isFinite && last.x > 0 ? last.x : 60.0,
+      maxHeight: maxH.isFinite && maxH > 0 ? maxH : 8.0,
+      finalLateral: last.y.isFinite ? last.y : 0.0,
     );
   }
 }
