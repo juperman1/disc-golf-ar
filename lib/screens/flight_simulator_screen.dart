@@ -17,15 +17,30 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
   double throwPower = 70;
   List<FlightPoint>? flightPath;
 
+  double _getWindDirectionDegrees(String direction) {
+    switch (direction) {
+      case 'front':
+        return 0; // headwind
+      case 'right':
+        return 90; // from right
+      case 'back':
+        return 180; // tailwind
+      case 'left':
+        return 270; // from left
+      default:
+        return 0;
+    }
+  }
+
   void _simulateFlight() {
-    final simulator = FlightSimulator(
+    final result = FlightSimulator.calculateFlight(
       disc: widget.disc,
+      power: throwPower / 100,
       windSpeed: windSpeed,
-      windDirection: windDirection,
-      throwPower: throwPower / 100,
+      windDirection: _getWindDirectionDegrees(windDirection),
     );
     setState(() {
-      flightPath = simulator.simulate();
+      flightPath = result.path;
     });
   }
 
