@@ -169,15 +169,27 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
   }
 
   Widget _buildStats(BuildContext context) {
+    if (flightResult == null) return const SizedBox.shrink();
+    
+    final dist = flightResult!.totalDistance;
+    final height = flightResult!.maxHeight;
+    final lateral = flightResult!.finalLateral;
+    
+    // Handle invalid values
+    final distStr = dist.isFinite && dist > 0 ? '${dist.toStringAsFixed(1)}m' : '0m';
+    final heightStr = height.isFinite && height > 0 ? '${height.toStringAsFixed(1)}m' : '0m';
+    final lateralStr = lateral.isFinite
+        ? '${lateral.abs().toStringAsFixed(1)}m ${lateral > 0 ? '→' : '←'}'
+        : '0m';
+    
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _stat(context, 'Distance', '${flightResult!.totalDistance.toStringAsFixed(1)}m'),
-          _stat(context, 'Max Height', '${flightResult!.maxHeight.toStringAsFixed(1)}m'),
-          _stat(context, 'Lateral', 
-            '${flightResult!.finalLateral.abs().toStringAsFixed(1)}m ${flightResult!.finalLateral > 0 ? '→' : '←'}'),
+          _stat(context, 'Distance', distStr),
+          _stat(context, 'Max Height', heightStr),
+          _stat(context, 'Lateral', lateralStr),
         ],
       ),
     );
@@ -226,7 +238,11 @@ class _FlightPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final points = result.path;
-    if (points.isEmpty) return;
+    if (points.isEmpty || points.length < 2) {
+      // Draw empty field
+      _drawField(canvas, size, size.width / 2, size.height - 30, (size.height - 60) / 150);
+      return;
+    }
 
     const maxDist = 150.0;
     const maxLateral = 40.0;
@@ -240,15 +256,25 @@ class _FlightPainter extends CustomPainter {
 
     _drawField(canvas, size, centerX, bottomY, scaleY);
 
+    // Filter valid points
+    final validPoints = points.where((p) => 
+      p.x.isFinite && p.y.isFinite && 
+      p.x >= 0 && p.x < 1000 && 
+      p.y.abs() < 1000
+    ).toList();
+
+    if (validPoints.length < 2) {
+      _drawThrower(canvas, centerX, bottomY);
+      return;
+    }
+
     // Convert to screen coordinates
-    final screenPoints = points.map((p) => Offset(
-      centerX + p.y * scaleX,  // p.y is lateral
-      bottomY - (p.x * scaleY), // p.x is forward distance
+    final screenPoints = validPoints.map((p) => Offset(
+      centerX + p.y * scaleX,
+      bottomY - (p.x * scaleY).clamp(0, availH),
     )).toList();
 
-    if (screenPoints.length < 2) return;
-
-    // Draw smooth spline through points
+    // Draw smooth spline
     final path = _createSmoothPath(screenPoints);
     
     // Glow
@@ -281,14 +307,13 @@ class _FlightPainter extends CustomPainter {
     
     path.moveTo(points.first.dx, points.first.dy);
     
-    // Use Catmull-Rom spline for smooth curve through all points
+    // Catmull-Rom spline
     for (int i = 0; i < points.length - 1; i++) {
       final p0 = i > 0 ? points[i - 1] : points[i];
       final p1 = points[i];
       final p2 = points[i + 1];
       final p3 = i < points.length - 2 ? points[i + 2] : p2;
       
-      // Catmull-Rom to cubic Bezier conversion
       final cp1x = p1.dx + (p2.dx - p0.dx) / 6;
       final cp1y = p1.dy + (p2.dy - p0.dy) / 6;
       final cp2x = p2.dx - (p3.dx - p1.dx) / 6;
@@ -301,20 +326,17 @@ class _FlightPainter extends CustomPainter {
   }
 
   void _drawField(Canvas canvas, Size size, double centerX, double bottomY, double scaleY) {
-    // Background
     canvas.drawRect(
       Offset(0, 0) & Size(size.width - 50, size.height),
       Paint()..color = Colors.green.shade100,
     );
     
-    // Center line
     final linePaint = Paint()
       ..color = Colors.green.shade400
       ..strokeWidth = 2;
     canvas.drawLine(
       Offset(centerX, bottomY), Offset(centerX, 20), linePaint);
     
-    // Distance markers on left
     final textStyle = TextStyle(color: Colors.green.shade800, fontSize: 11, fontWeight: FontWeight.bold);
     
     for (int d = 0; d <= 150; d += 25) {
@@ -332,7 +354,6 @@ class _FlightPainter extends CustomPainter {
       tp.paint(canvas, Offset(5, y - tp.height / 2));
     }
     
-    // Lateral scale at bottom
     for (int l = -30; l <= 30; l += 15) {
       if (l == 0) continue;
       final x = centerX + l * 3;
@@ -363,16 +384,11 @@ class _FlightPainter extends CustomPainter {
   }
 
   void _drawDisc(Canvas canvas, double x, double y) {
-    // Shadow
     canvas.drawCircle(Offset(x + 3, y + 3), 10, 
       Paint()..color = Colors.black.withOpacity(0.3));
-    
-    // Body
     canvas.drawCircle(Offset(x, y), 10, Paint()..color = Colors.red);
     canvas.drawCircle(Offset(x, y), 10, 
       Paint()..color = Colors.red.shade800..style = PaintingStyle.stroke..strokeWidth = 3);
-    
-    // X mark
     final cross = Paint()..color = Colors.white..strokeWidth = 2;
     canvas.drawLine(Offset(x - 4, y - 4), Offset(x + 4, y + 4), cross);
     canvas.drawLine(Offset(x + 4, y - 4), Offset(x - 4, y + 4), cross);
