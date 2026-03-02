@@ -1,75 +1,64 @@
 import 'package:flutter/material.dart';
+import 'models/disc.dart';
+import 'screens/flight_simulator_screen.dart';
 
-void main() // Trigger build {
-  runApp(const MyApp());
+void main() {
+  runApp(const DiscGolfApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class DiscGolfApp extends StatelessWidget {
+  const DiscGolfApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Disc Golf AR',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Disc Golf Discs'),
+      home: const DiscListScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  final List<Map<String, dynamic>> discs = const [
-    {'name': 'Destroyer', 'brand': 'Innova', 'speed': 12, 'glide': 5, 'turn': -1, 'fade': 3},
-    {'name': 'Buzzz', 'brand': 'Discraft', 'speed': 5, 'glide': 4, 'turn': -1, 'fade': 1},
-    {'name': 'Judge', 'brand': 'Dynamic', 'speed': 2, 'glide': 4, 'turn': 0, 'fade': 1},
-  ];
+class DiscListScreen extends StatelessWidget {
+  const DiscListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        title: const Text('Disc Golf Discs'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
       ),
-      body: ListView.builder( // Fixed
-        itemCount: discs.length,
+      body: ListView.builder(
+        itemCount: allDiscs.length,
         itemBuilder: (context, index) {
-          final disc = discs[index];
+          final disc = allDiscs[index];
           return Card(
             child: ListTile(
               leading: const Icon(Icons.disc_full),
-              title: Text(disc['name'] as String),
-              subtitle: Text('${disc['brand']} | Speed: ${disc['speed']}'),
-              trailing: Text('${disc['turn']}/${disc['fade']}'),
+              title: Text(disc.name),
+              subtitle: Text(disc.brand),
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getDiscColor(disc.speed),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  disc.flightNumbers,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(disc['name'] as String),
-                    content: Text(
-                      'Speed: ${disc['speed']}\n'
-                      'Glide: ${disc['glide']}\n'
-                      'Turn: ${disc['turn']}\n'
-                      'Fade: ${disc['fade']}',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('OK'),
-                      ),
-                    ],
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FlightSimulatorScreen(disc: disc),
                   ),
                 );
               },
@@ -78,5 +67,12 @@ class _MyHomePageState extends State<MyHomePage> {
         },
       ),
     );
+  }
+
+  Color _getDiscColor(int speed) {
+    if (speed >= 10) return Colors.red;
+    if (speed >= 7) return Colors.orange;
+    if (speed >= 4) return Colors.blue;
+    return Colors.green;
   }
 }
