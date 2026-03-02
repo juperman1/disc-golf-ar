@@ -1,0 +1,11 @@
+.DS_Store
+.dart_tool/
+.packages
+build/
+.pub/
+.pub-cache/
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
