@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math';
 import '../models/disc.dart';
 import '../services/flight_simulator.dart';
 
@@ -17,18 +18,13 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
   double throwPower = 70;
   FlightResult? flightResult;
 
-  double _getWindDirectionDegrees(String direction) {
-    switch (direction) {
-      case 'front':
-        return 0; // headwind
-      case 'right':
-        return 90; // from right
-      case 'back':
-        return 180; // tailwind
-      case 'left':
-        return 270; // from left
-      default:
-        return 0;
+  double _getWindDirectionDegrees(String dir) {
+    switch (dir) {
+      case 'front': return 0;
+      case 'right': return 90;
+      case 'back': return 180;
+      case 'left': return 270;
+      default: return 0;
     }
   }
 
@@ -53,47 +49,8 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
       ),
       body: Column(
         children: [
-          // Disc Info Card
-          Card(
-            margin: const EdgeInsets.all(8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Text(widget.disc.name, style: Theme.of(context).textTheme.headlineSmall),
-                  Text('${widget.disc.brand} | ${widget.disc.flightNumbers}'),
-                  const SizedBox(height: 4),
-                  Text(
-                    _getDiscDescription(),
-                    style: Theme.of(context).textTheme.bodySmall,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          // Controls
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                _buildWindControls(),
-                const SizedBox(height: 8),
-                _buildPowerSlider(),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _simulateFlight,
-                    child: const Text('Simulate Flight'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Flight Visualization
+          _buildInfoCard(context),
+          _buildControls(context),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -103,109 +60,135 @@ class _FlightSimulatorScreenState extends State<FlightSimulatorScreen> {
               ),
             ),
           ),
-          
-          // Stats with explanations
-          if (flightResult != null)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildStat('Distance', '${flightResult!.totalDistance.toStringAsFixed(1)}m', 'How far the disc flies'),
-                  _buildStat('Max Height', '${flightResult!.maxHeight.toStringAsFixed(1)}m', 'Highest point in flight'),
-                  _buildStat('Lateral', '${flightResult!.finalLateral.abs().toStringAsFixed(1)}m ${_getLateralDirection()}', 'Left/right from target'),
-                ],
-              ),
-            ),
+          if (flightResult != null) _buildStats(context),
         ],
       ),
     );
   }
 
-  String _getLateralDirection() {
-    if (flightResult == null) return '';
-    return flightResult!.finalLateral > 0 ? '→' : '←';
+  Widget _buildInfoCard(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Text(widget.disc.name, style: Theme.of(context).textTheme.headlineSmall),
+            Text('${widget.disc.brand} | ${widget.disc.flightNumbers}'),
+            const SizedBox(height: 4),
+            Text(_getDiscDescription(),
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getDiscDescription() {
-    final s = widget.disc.speed;
     final t = widget.disc.turn;
     final f = widget.disc.fade;
+    final s = widget.disc.speed;
     
-    if (t < -2) return 'Very Understable - great for beginners, hyzer flips';
-    if (t < 0 && f > 3) return 'Moderately Stable - versatile, straight flight';
-    if (f > 3) return 'Overstable - reliable fade, windy conditions';
-    if (s >= 12) return 'Distance Driver - maximum distance potential';
-    if (s >= 9) return 'Fairway Driver - control and distance';
-    if (s >= 6) return 'Midrange - accuracy and control';
-    return 'Putter - precision approach shots';
+    if (t < -2) return 'Very Understable - beginners, hyzer flips';
+    if (t < 0 && f > 3) return 'Moderately Stable - straight flight';
+    if (f > 3) return 'Overstable - reliable fade, windy';
+    if (s >= 12) return 'Distance Driver - max distance';
+    if (s >= 9) return 'Fairway Driver - control & distance';
+    if (s >= 6) return 'Midrange - accuracy';
+    return 'Putter - precision';
   }
 
-  Widget _buildWindControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Wind: ${windSpeed.toStringAsFixed(0)} km/h', style: Theme.of(context).textTheme.titleSmall),
-        Slider(
-          value: windSpeed,
-          min: 0,
-          max: 30,
-          divisions: 30,
-          label: windSpeed.toStringAsFixed(0),
-          onChanged: (value) => setState(() => windSpeed = value),
-        ),
-        Text('Direction:', style: Theme.of(context).textTheme.bodySmall),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _buildDirectionButton('left', '← Left'),
-            _buildDirectionButton('front', '↑ Front'),
-            _buildDirectionButton('back', '↓ Back'),
-            _buildDirectionButton('right', '→ Right'),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDirectionButton(String direction, String label) {
-    return ElevatedButton(
-      onPressed: () => setState(() => windDirection = direction),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: windDirection == direction ? Colors.blue : Colors.grey.shade300,
-        foregroundColor: windDirection == direction ? Colors.white : Colors.black,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      ),
-      child: Text(label, style: const TextStyle(fontSize: 11)),
-    );
-  }
-
-  Widget _buildPowerSlider() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Throw Power: ${throwPower.toStringAsFixed(0)}%', style: Theme.of(context).textTheme.titleSmall),
-        Slider(
-          value: throwPower,
-          min: 30,
-          max: 100,
-          divisions: 70,
-          label: throwPower.toStringAsFixed(0),
-          onChanged: (value) => setState(() => throwPower = value),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStat(String label, String value, String description) {
-    return Tooltip(
-      message: description,
+  Widget _buildControls(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          // Wind Speed
+          Row(
+            children: [
+              Text('Wind: ${windSpeed.toInt()} km/h', 
+                style: Theme.of(context).textTheme.titleSmall),
+            ],
+          ),
+          Slider(
+            value: windSpeed,
+            min: 0,
+            max: 30,
+            divisions: 30,
+            onChanged: (v) => setState(() => windSpeed = v),
+          ),
+          
+          // Wind Direction
+          Text('Direction:', style: Theme.of(context).textTheme.bodySmall),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildDirBtn('left', '← Left'),
+              _buildDirBtn('front', '↑ Front'),
+              _buildDirBtn('back', '↓ Back'),
+              _buildDirBtn('right', '→ Right'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          // Power
+          Text('Power: ${throwPower.toInt()}%', 
+            style: Theme.of(context).textTheme.titleSmall),
+          Slider(
+            value: throwPower,
+            min: 30,
+            max: 100,
+            divisions: 70,
+            onChanged: (v) => setState(() => throwPower = v),
+          ),
+          
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _simulateFlight,
+              child: const Text('Simulate Flight'),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDirBtn(String dir, String label) {
+    return ElevatedButton(
+      onPressed: () => setState(() => windDirection = dir),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: windDirection == dir ? Colors.blue : Colors.grey.shade300,
+        foregroundColor: windDirection == dir ? Colors.white : Colors.black,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _buildStats(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _stat(context, 'Distance', '${flightResult!.totalDistance.toStringAsFixed(1)}m'),
+          _stat(context, 'Max Height', '${flightResult!.maxHeight.toStringAsFixed(1)}m'),
+          _stat(context, 'Lateral', 
+            '${flightResult!.finalLateral.abs().toStringAsFixed(1)}m ${flightResult!.finalLateral > 0 ? '→' : '←'}'),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(BuildContext c, String label, String value) {
+    return Column(
+      children: [
+        Text(label, style: Theme.of(c).textTheme.bodySmall),
+        Text(value, style: Theme.of(c).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }
@@ -225,114 +208,93 @@ class FlightVisualization extends StatelessWidget {
         border: Border.all(color: Colors.green.shade200),
       ),
       child: flightResult == null
-          ? const Center(
-              child: Text('Tap "Simulate Flight" to see trajectory'),
-            )
+          ? const Center(child: Text('Tap "Simulate Flight"'))
           : CustomPaint(
               size: Size.infinite,
-              painter: _FlightPathPainter(flightResult: flightResult!, disc: disc),
+              painter: _FlightPainter(flightResult!, disc),
             ),
     );
   }
 }
 
-class _FlightPathPainter extends CustomPainter {
-  final FlightResult flightResult;
+class _FlightPainter extends CustomPainter {
+  final FlightResult result;
   final Disc disc;
 
-  _FlightPathPainter({required this.flightResult, required this.disc});
+  _FlightPainter(this.result, this.disc);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final points = flightResult.path;
+    final points = result.path;
     if (points.isEmpty) return;
 
-    // Fixed scale
-    const maxDistance = 150.0;
+    const maxDist = 150.0;
     const maxLateral = 40.0;
     
-    final availableHeight = size.height - 60;
-    final availableWidth = size.width - 50;
-    final scaleY = availableHeight / maxDistance;
-    final scaleX = availableWidth / (maxLateral * 2);
+    final availH = size.height - 60;
+    final availW = size.width - 50;
+    final scaleY = availH / maxDist;
+    final scaleX = availW / (maxLateral * 2);
     final centerX = (size.width - 50) / 2 + 40;
     final bottomY = size.height - 30;
 
-    // Draw field
     _drawField(canvas, size, centerX, bottomY, scaleY);
 
-    // Convert all points to screen coordinates
+    // Convert to screen coordinates
     final screenPoints = points.map((p) => Offset(
-      centerX + p.z * scaleX,
-      bottomY - (p.x * scaleY),
+      centerX + p.y * scaleX,  // p.y is lateral
+      bottomY - (p.x * scaleY), // p.x is forward distance
     )).toList();
 
     if (screenPoints.length < 2) return;
 
-    // Draw smooth path using Catmull-Rom spline for true smoothness
+    // Draw smooth spline through points
     final path = _createSmoothPath(screenPoints);
     
-    // Draw shadow
-    final shadowPaint = Paint()
-      ..color = _getPathColor().withOpacity(0.3)
-      ..strokeWidth = 12
+    // Glow
+    final glowPaint = Paint()
+      ..color = _getColor().withOpacity(0.3)
+      ..strokeWidth = 10
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(path, shadowPaint);
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, glowPaint);
     
-    // Draw main path
-    final pathPaint = Paint()
-      ..color = _getPathColor()
-      ..strokeWidth = 5
+    // Main path
+    final paint = Paint()
+      ..color = _getColor()
+      ..strokeWidth = 4
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(path, pathPaint);
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, paint);
     
-    // Draw landing disc
-    final landing = screenPoints.last;
-    _drawDisc(canvas, landing.dx, landing.dy);
+    // Landing disc
+    final end = screenPoints.last;
+    _drawDisc(canvas, end.dx, end.dy);
     
-    // Draw thrower
-    _drawThrower(canvas, screenPoints.first.dx, bottomY);
+    // Thrower
+    _drawThrower(canvas, centerX, bottomY);
   }
 
-  // Create a smooth path through all points using cubic Bezier curves
   Path _createSmoothPath(List<Offset> points) {
     final path = Path();
-    if (points.isEmpty) return path;
+    if (points.length < 2) return path;
     
     path.moveTo(points.first.dx, points.first.dy);
     
-    if (points.length == 2) {
-      path.lineTo(points.last.dx, points.last.dy);
-      return path;
-    }
-    
-    // Use cubic Bezier for smooth curves
+    // Use Catmull-Rom spline for smooth curve through all points
     for (int i = 0; i < points.length - 1; i++) {
-      final current = points[i];
-      final next = points[i + 1];
+      final p0 = i > 0 ? points[i - 1] : points[i];
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final p3 = i < points.length - 2 ? points[i + 2] : p2;
       
-      if (i == 0) {
-        // First segment - simple line to first control point
-        path.lineTo(current.dx, current.dy);
-      }
+      // Catmull-Rom to cubic Bezier conversion
+      final cp1x = p1.dx + (p2.dx - p0.dx) / 6;
+      final cp1y = p1.dy + (p2.dy - p0.dy) / 6;
+      final cp2x = p2.dx - (p3.dx - p1.dx) / 6;
+      final cp2y = p2.dy - (p3.dy - p1.dy) / 6;
       
-      // Calculate control points for smooth curve
-      final prev = i > 0 ? points[i - 1] : current;
-      final after = i < points.length - 2 ? points[i + 2] : next;
-      
-      // Calculate tangent vectors
-      final tangentX = (next.dx - prev.dx) * 0.3;
-      final tangentY = (next.dy - prev.dy) * 0.3;
-      
-      final cp1 = Offset(current.dx + tangentX, current.dy + tangentY);
-      final cp2 = Offset(next.dx - (after.dx - current.dx) * 0.3, 
-                        next.dy - (after.dy - current.dy) * 0.3);
-      
-      path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, next.dx, next.dy);
+      path.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.dx, p2.dy);
     }
     
     return path;
@@ -340,119 +302,83 @@ class _FlightPathPainter extends CustomPainter {
 
   void _drawField(Canvas canvas, Size size, double centerX, double bottomY, double scaleY) {
     // Background
-    final bgPaint = Paint()
-      ..color = Colors.green.shade100
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(Offset(0, 0) & Size(size.width - 50, size.height), bgPaint);
+    canvas.drawRect(
+      Offset(0, 0) & Size(size.width - 50, size.height),
+      Paint()..color = Colors.green.shade100,
+    );
     
     // Center line
     final linePaint = Paint()
       ..color = Colors.green.shade400
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    
+      ..strokeWidth = 2;
     canvas.drawLine(
-      Offset(centerX, bottomY),
-      Offset(centerX, 20),
-      linePaint,
-    );
+      Offset(centerX, bottomY), Offset(centerX, 20), linePaint);
     
     // Distance markers on left
-    final textStyle = TextStyle(
-      color: Colors.green.shade800,
-      fontSize: 11,
-      fontWeight: FontWeight.bold,
-    );
+    final textStyle = TextStyle(color: Colors.green.shade800, fontSize: 11, fontWeight: FontWeight.bold);
     
     for (int d = 0; d <= 150; d += 25) {
       final y = bottomY - (d * scaleY);
       if (y < 20) break;
       
       canvas.drawLine(
-        Offset(centerX - 10, y),
-        Offset(centerX + 10, y),
-        linePaint,
-      );
+        Offset(centerX - 10, y), Offset(centerX + 10, y), linePaint);
       
-      final textSpan = TextSpan(text: '${d}m', style: textStyle);
-      final textPainter = TextPainter(
-        text: textSpan,
+      final tp = TextPainter(
+        text: TextSpan(text: '${d}m', style: textStyle),
         textDirection: TextDirection.ltr,
       );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(5, y - textPainter.height / 2));
+      tp.layout();
+      tp.paint(canvas, Offset(5, y - tp.height / 2));
     }
     
     // Lateral scale at bottom
     for (int l = -30; l <= 30; l += 15) {
       if (l == 0) continue;
-      final x = centerX + l * 3; // scale factor
-      
-      final lateralPaint = Paint()
-        ..color = Colors.green.shade600
-        ..strokeWidth = 1;
+      final x = centerX + l * 3;
       
       canvas.drawLine(
-        Offset(x, bottomY - 5),
-        Offset(x, bottomY + 5),
-        lateralPaint,
-      );
+        Offset(x, bottomY - 5), Offset(x, bottomY + 5),
+        Paint()..color = Colors.green.shade600..strokeWidth = 1);
       
-      final textSpan = TextSpan(
-        text: l > 0 ? '+$l' : '$l',
-        style: TextStyle(color: Colors.green.shade700, fontSize: 9),
+      final tp = TextPainter(
+        text: TextSpan(text: l > 0 ? '+$l' : '$l', 
+          style: TextStyle(color: Colors.green.shade700, fontSize: 9)),
+        textDirection: TextDirection.ltr,
       );
-      final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(x - textPainter.width / 2, bottomY + 8));
+      tp.layout();
+      tp.paint(canvas, Offset(x - tp.width / 2, bottomY + 8));
     }
   }
 
   void _drawThrower(Canvas canvas, double x, double y) {
-    final paint = Paint()
-      ..color = Colors.blue.shade700
-      ..style = PaintingStyle.fill;
-    
-    // Triangle pointing up
-    final path = Path();
-    path.moveTo(x, y - 15);
-    path.lineTo(x - 10, y + 5);
-    path.lineTo(x + 10, y + 5);
-    path.close();
-    
+    final paint = Paint()..color = Colors.blue.shade700..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(x, y - 15)
+      ..lineTo(x - 10, y + 5)
+      ..lineTo(x + 10, y + 5)
+      ..close();
     canvas.drawPath(path, paint);
     canvas.drawCircle(Offset(x, y - 20), 6, paint);
   }
 
   void _drawDisc(Canvas canvas, double x, double y) {
     // Shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(x + 3, y + 3), 10, shadowPaint);
+    canvas.drawCircle(Offset(x + 3, y + 3), 10, 
+      Paint()..color = Colors.black.withOpacity(0.3));
     
-    // Disc
-    final discPaint = Paint()
-      ..color = Colors.red
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(x, y), 10, discPaint);
-    
-    // Rim
-    final rimPaint = Paint()
-      ..color = Colors.red.shade800
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    canvas.drawCircle(Offset(x, y), 10, rimPaint);
+    // Body
+    canvas.drawCircle(Offset(x, y), 10, Paint()..color = Colors.red);
+    canvas.drawCircle(Offset(x, y), 10, 
+      Paint()..color = Colors.red.shade800..style = PaintingStyle.stroke..strokeWidth = 3);
     
     // X mark
-    final crossPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 2;
-    canvas.drawLine(Offset(x - 4, y - 4), Offset(x + 4, y + 4), crossPaint);
-    canvas.drawLine(Offset(x + 4, y - 4), Offset(x - 4, y + 4), crossPaint);
+    final cross = Paint()..color = Colors.white..strokeWidth = 2;
+    canvas.drawLine(Offset(x - 4, y - 4), Offset(x + 4, y + 4), cross);
+    canvas.drawLine(Offset(x + 4, y - 4), Offset(x - 4, y + 4), cross);
   }
 
-  Color _getPathColor() {
+  Color _getColor() {
     if (disc.speed >= 12) return Colors.red.shade600;
     if (disc.speed >= 9) return Colors.orange.shade700;
     if (disc.speed >= 6) return Colors.blue.shade600;
